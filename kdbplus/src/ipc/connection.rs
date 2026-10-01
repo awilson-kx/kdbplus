@@ -689,7 +689,7 @@ impl QStreamInner for TcpStream {
         // Serialize a message
         let byte_message = message.serialize(message_type, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         Ok(())
     }
 
@@ -697,7 +697,7 @@ impl QStreamInner for TcpStream {
         // Serialize a message
         let byte_message = message.serialize(qmsg_type::asynchronous, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         Ok(())
     }
 
@@ -705,7 +705,7 @@ impl QStreamInner for TcpStream {
         // Serialize a message
         let byte_message = message.serialize(qmsg_type::synchronous, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         // Receive a response. If message type is not response it returns an error.
         match receive_message(self).await {
             Ok((qmsg_type::response, response)) => Ok(response),
@@ -747,7 +747,7 @@ impl QStreamInner for TlsStream<TcpStream> {
         // Serialize a message
         let byte_message = message.serialize(message_type, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         Ok(())
     }
 
@@ -755,7 +755,7 @@ impl QStreamInner for TlsStream<TcpStream> {
         // Serialize a message
         let byte_message = message.serialize(qmsg_type::asynchronous, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         Ok(())
     }
 
@@ -763,7 +763,7 @@ impl QStreamInner for TlsStream<TcpStream> {
         // Serialize a message
         let byte_message = message.serialize(qmsg_type::synchronous, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         // Receive a response. If message type is not response it returns an error.
         match receive_message(self).await {
             Ok((qmsg_type::response, response)) => Ok(response),
@@ -800,7 +800,7 @@ impl QStreamInner for UnixStream {
         // Serialize a message
         let byte_message = message.serialize(message_type, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         Ok(())
     }
 
@@ -808,7 +808,7 @@ impl QStreamInner for UnixStream {
         // Serialize a message
         let byte_message = message.serialize(qmsg_type::asynchronous, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         Ok(())
     }
 
@@ -816,7 +816,7 @@ impl QStreamInner for UnixStream {
         // Serialize a message
         let byte_message = message.serialize(qmsg_type::synchronous, is_local).await;
         // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
+        self.write_all(&byte_message).await?;
         // Receive a response. If message type is not response it returns an error.
         match receive_message(self).await {
             Ok((qmsg_type::response, response)) => Ok(response),
@@ -926,7 +926,7 @@ where
 {
     // Send credential
     let credential = credential_.to_string() + method_bytes;
-    write_all_cancellation_safe(socket, credential.as_bytes()).await?;
+    socket.write_all(credential.as_bytes()).await?;
 
     // Placeholder of common capablility
     let mut cap = [0u8; 1];
@@ -1104,38 +1104,6 @@ async fn build_identity_from_cert() -> Result<Identity> {
 
 //%% QStream Query %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
-/// Read bytes exactly the same length of bytes as the buffer length.
-async fn read_exact_cancellation_safe<S>(socket: &mut S, buffer: &mut [u8]) -> Result<usize>
-where
-    S: Unpin + AsyncReadExt,
-{
-    let mut read_total = 0;
-    let to_read = buffer.len();
-    loop {
-        read_total += socket.read(buffer).await?;
-        if read_total == to_read {
-            break;
-        }
-    }
-    Ok(read_total)
-}
-
-/// Write all bytes in the buffer length.
-async fn write_all_cancellation_safe<S>(socket: &mut S, buffer: &[u8]) -> Result<usize>
-where
-    S: Unpin + AsyncWriteExt,
-{
-    let mut write_total = 0;
-    let to_write = buffer.len();
-    loop {
-        write_total += socket.write(&buffer[write_total..]).await?;
-        if write_total == to_write {
-            break;
-        }
-    }
-    Ok(write_total)
-}
-
 /// Receive a message from q process with decompression if necessary. The received message is parsed as `K` and message type is
 ///  stored in the first returned value.
 /// # Parameters
@@ -1146,7 +1114,7 @@ where
 {
     // Read header
     let mut header_buffer = [0u8; 8];
-    if let Err(err) = read_exact_cancellation_safe(socket, &mut header_buffer).await {
+    if let Err(err) = socket.read_exact(&mut header_buffer).await {
         // The expected message is header or EOF (close due to q process failure resulting from a bad query)
         return Err(io::Error::new(
             io::ErrorKind::ConnectionAborted,
@@ -1162,7 +1130,7 @@ where
     let body_length = header.length as usize - MessageHeader::size();
     let mut body: Vec<u8> = Vec::with_capacity(body_length);
     body.resize(body_length, 0_u8);
-    if let Err(err) = read_exact_cancellation_safe(socket, &mut body).await {
+    if let Err(err) = socket.read_exact(&mut body).await {
         // Fails if q process fails before reading the body
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
